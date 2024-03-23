@@ -34,7 +34,7 @@ class BotClient(discord.Client):
         if not self.sync:
             self.sync = True
             await self.tree.sync(guild=TEST_SERVER)
-        print("OK")
+        print("Bot ready, listening for commands!")
 
 client = BotClient()
 def is_older_than(time: dt, diff_seconds):
