@@ -37,13 +37,12 @@ class BotClient(discord.Client):
         print("OK")
 
 client = BotClient()
-
-def timecheck(time: dt, diff):
-    return (dt.now(time.tzinfo) - time) > td(seconds=diff)
+def is_older_than(time: dt, diff_seconds):
+    return (dt.now(time.tzinfo) - time) > td(seconds=diff_seconds)
 
 @client.tree.command(name="new_proposal", description="Creates a new change proposal", guild=TEST_SERVER)
 async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
-    if not timecheck(inter.user.created_at, 259_200): # 3 days
+    if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
     name = str(inter.user.id) + inter.created_at.astimezone(tz.utc).strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
@@ -53,7 +52,7 @@ async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, 
 
 @client.tree.command(name="edit_proposal", description="Edit an existing proposal", guild=TEST_SERVER)
 async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord.Attachment):
-    if not timecheck(inter.user.created_at, 259_200): # 3 days
+    if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
     action_queue.append({"type":"edit", "name":proposal, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
