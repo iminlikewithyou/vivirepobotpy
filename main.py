@@ -38,22 +38,8 @@ class BotClient(discord.Client):
 
 client = BotClient()
 
-
-
-# @client.tree.command(name="purge", description="deletes messages", guild=TEST_SERVER)
-# @app_commands.describe(count = "Number of messages to be deleted | 25")
-# @app_commands.describe(include = "User or Role's messages to be deleted | @everyone")
-# @app_commands.describe(exclude = "User or Role's messages to be ignored | None")
-# @app_commands.describe(message_type = "type of message to be deleted | all")
-# async def deletemsgs(inter: discord.Interaction, count: int = 25, include: discord.User|discord.Role = None, exclude: discord.User|discord.Role = None, message_type: MessageType = None):
-
 def timecheck(time: dt, diff):
     return (dt.now(time.tzinfo) - time) > td(seconds=diff)
-
-@client.tree.command(name="ping", description="...", guild=TEST_SERVER)
-async def ping(inter: discord.Interaction):
-    await inter.response.send_message("pong", ephemeral=True)    
-    return
 
 @client.tree.command(name="new_proposal", description="Creates a new change proposal", guild=TEST_SERVER)
 async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
