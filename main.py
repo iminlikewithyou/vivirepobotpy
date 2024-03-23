@@ -25,7 +25,7 @@ head_repo = gh_api.get_repo(f"{head_repo_author}/{repo_name}")
 
 # Set up the Discord bot
 
-DISCORD_SERVER = discord.Object(id = int(server))
+DISCORD_SERVER = discord.Object(id = int(server_id))
 
 intents = discord.Intents.default()
 intents.members = True
@@ -49,7 +49,7 @@ client.run(token=token)
 # Action queue
 
 action_queue = []
-proposals = [pull for pull in vivi.get_pulls(state="open")]
+proposals = [pull for pull in base_repo.get_pulls(state="open")]
 
 # Utility
 
@@ -111,7 +111,7 @@ def new_pullreq(task: dict):
         maintainer_can_modify=True
     )
 
-    proposals = [pull for pull in vivi.get_pulls(state="open")]
+    proposals = [pull for pull in base_repo.get_pulls(state="open")]
 
 def edit_pullreq(task: dict):
     file = head_repo.get_contents(f"changes/{task['name']}.diff", ref=task["name"])
