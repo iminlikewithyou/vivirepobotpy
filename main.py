@@ -45,7 +45,6 @@ class BotClient(discord.Client):
         print("Bot ready, listening for commands!")
 
 client = BotClient()
-client.run(token=token)
 
 # Task queue
 
@@ -54,7 +53,7 @@ task_queue = TaskQueue(task_delay=90)
 # Utility
 
 def is_older_than(time: datetime, diff_seconds):
-    return (datetime.now() - time) > timedelta(seconds=diff_seconds)
+    return (datetime.now(time.tzinfo) - time) > timedelta(seconds=diff_seconds)
 
 def update_proposals():
     global proposals
@@ -64,9 +63,9 @@ update_proposals()
 
 # Commands
 
-proposalGroup = app_commands.Group(name="proposal", description="Make a proposal", guild=DISCORD_SERVER)
+proposalGroup = app_commands.Group(name="proposal", description="Make a proposal", guild_ids=[DISCORD_SERVER])
 
-@proposalGroup.command(name="create", description="Create a new proposal", guild=DISCORD_SERVER)
+@proposalGroup.command(name="create", description="Create a new proposal")
 async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
@@ -76,7 +75,7 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
-@proposalGroup.command(name="edit", description="Edit an existing proposal", guild=DISCORD_SERVER)
+@proposalGroup.command(name="edit", description="Edit an existing proposal")
 async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord.Attachment):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
@@ -96,7 +95,7 @@ async def proposal_auto(inter: discord.Interaction, current: str):
             ))
     return ret[:25]
 
-client.tree.add_command(proposalGroup)
+client.tree.add_command(proposalGroup, guild=DISCORD_SERVER)
 
 # Functions
 
@@ -118,7 +117,6 @@ def new_pull(name: str, author: str, data: str):
     # Create the pull request
     base_repo.create_pull(
         title=f"'{name.split('--')[2]}' created by {author}",
-        body="idk what to put here",
         base="master",
         head=f"{head_repo_author}:{name}",
         maintainer_can_modify=True
@@ -138,3 +136,6 @@ def edit_pull(name: str, data: str):
         branch=name,
         sha=file.sha
     )
+
+#Pretty sure this needs to go at the bottom
+client.run(token=token)
