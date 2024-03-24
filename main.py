@@ -49,12 +49,18 @@ client.run(token=token)
 # Action queue
 
 action_queue = []
-proposals = [pull for pull in base_repo.get_pulls(state="open")]
+proposals = []
 
 # Utility
 
 def is_older_than(time: dt, diff_seconds):
     return (dt.now(time.tzinfo) - time) > td(seconds=diff_seconds)
+
+def update_proposals():
+    global proposals
+    proposals = [pull for pull in base_repo.get_pulls(state="open")]
+
+update_proposals()
 
 # Commands
 
@@ -111,7 +117,7 @@ def new_pullreq(task: dict):
         maintainer_can_modify=True
     )
 
-    proposals = [pull for pull in base_repo.get_pulls(state="open")]
+    update_proposals()
 
 def edit_pullreq(task: dict):
     file = head_repo.get_contents(f"changes/{task['name']}.diff", ref=task["name"])
