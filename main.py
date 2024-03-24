@@ -1,4 +1,4 @@
-import discord, time, threading, os
+import discord, os
 import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
