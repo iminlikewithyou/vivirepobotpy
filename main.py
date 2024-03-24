@@ -64,7 +64,9 @@ update_proposals()
 
 # Commands
 
-@client.tree.command(name="proposechanges", description="Creates a new change proposal", guild=DISCORD_SERVER)
+proposalGroup = app_commands.Group(name="proposal", description="Make a proposal", guild=DISCORD_SERVER)
+
+@proposalGroup.command(name="create", description="Create a new proposal", guild=DISCORD_SERVER)
 async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
@@ -74,7 +76,7 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
-@client.tree.command(name="editproposal", description="Edit an existing proposal", guild=DISCORD_SERVER)
+@proposalGroup.command(name="edit", description="Edit an existing proposal", guild=DISCORD_SERVER)
 async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord.Attachment):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
@@ -93,6 +95,8 @@ async def proposal_auto(inter: discord.Interaction, current: str):
                 value=prop.head.ref
             ))
     return ret[:25]
+
+client.tree.add_command(proposalGroup)
 
 # Functions
 
