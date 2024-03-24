@@ -1,6 +1,6 @@
 import threading
 import time
-from typing import Callable
+from typing import Callable, Any
 
 class TaskQueue:
     def __init__(self, task_delay: int):
@@ -17,13 +17,14 @@ class TaskQueue:
         self.thread = threading.Thread(target=self._process_queue, daemon=True)
         self.thread.start()
 
-    def add(self, task: Callable):
+    def add(self, task: Callable, *args, **kwargs):
         """
-        Adds a task to the task queue.
+        Adds a task along with its arguments to the task queue.
         """
         # Use a lock to ensure that only one thread modifies the queue at a time
         with self.lock:
-            self.queue.append(task)
+            # Store the task along with its arguments as a tuple
+            self.queue.append((task, args, kwargs))
             # Tell the processing thread that a new task is ready to be executed
             self.event.set()
 
@@ -39,16 +40,16 @@ class TaskQueue:
             time_since_last_task = time.time() - self.last_task_time
             time_to_wait = self.task_delay - time_since_last_task
             if time_to_wait > 0:
-              time.sleep(time_to_wait)
+                time.sleep(time_to_wait)
 
             # Use the queue inside the lock to ensure that the queue is not modified by another thread
             with self.lock:
                 if self.queue:
-                    task = self.queue.pop(0)
+                    task, args, kwargs = self.queue.pop(0)
                     self.last_task_time = time.time()
                 if not self.queue:
                     # No more tasks, clear the event to wait for the next task
                     self.event.clear()
 
             # Execute the task outside the lock to not block other operations
-            task()
+            task(*args, **kwargs)
