@@ -70,7 +70,7 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
     name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
-    task_queue.add(new_pull, {"type":"new", "name":name, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    task_queue.add(new_pull, name=name, author=inter.user.name, data=(await diff.read()).decode("utf-8"))
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
@@ -79,7 +79,7 @@ async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    task_queue.add(edit_pull, {"type":"edit", "name":proposal, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    task_queue.add(edit_pull, name=proposal, data=(await diff.read()).decode("utf-8"))
     await inter.response.send_message("Editing Proposal...", ephemeral=True)
     return
 
@@ -96,41 +96,41 @@ async def proposal_auto(inter: discord.Interaction, current: str):
 
 # Functions
 
-def new_pull(task: dict):
+def new_pull(name: str, author: str, data: str):
     # Create the branch
     head_repo.create_git_ref(
-        f"refs/heads/{task['name']}",
+        f"refs/heads/{name}",
         head_repo.get_branch("master").commit.sha
     )
 
     # Create the diff file
     head_repo.create_file(
-        path=f"changes/{task['name']}.diff",
+        path=f"changes/{name}.diff",
         message="Create .diff",
-        content=task["data"],
-        branch=task["name"]
+        content=data,
+        branch=name
     ) 
 
     # Create the pull request
     base_repo.create_pull(
-        title=f"'{task['name'].split('--')[2]}' created by {task["author"]}",
+        title=f"'{name.split('--')[2]}' created by {author}",
         body="idk what to put here",
         base="master",
-        head=f"{head_repo_author}:{task['name']}",
+        head=f"{head_repo_author}:{name}",
         maintainer_can_modify=True
     )
 
     update_proposals()
 
-def edit_pull(task: dict):
+def edit_pull(name: str, data: str):
     # Retrieve the diff file
-    file = head_repo.get_contents(f"changes/{task['name']}.diff", ref=task["name"])
+    file = head_repo.get_contents(f"changes/{name}.diff", ref=name)
 
     # Update the diff file
     head_repo.update_file(
         path=file.path,
         message="Update .diff",
-        content=task["data"],
-        branch=task["name"],
+        content=data,
+        branch=name,
         sha=file.sha
     )
