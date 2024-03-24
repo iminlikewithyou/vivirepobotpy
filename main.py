@@ -1,27 +1,35 @@
-import discord, time, threading, os
+import discord, os
 import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
-from datetime import datetime as dt, timedelta as td, timezone as tz
+from datetime import datetime, timedelta
+from task_queue import TaskQueue
+
+# Load environment variables
 
 load_dotenv()
 
+server_id = os.getenv("SERVER_ID")
 token = os.getenv("DISCORD_TOKEN")
 ghtoken = os.getenv("GITHUB_TOKEN")
 
+repo_name = "vivi"
+base_repo_author = os.getenv("BASE_REPO")
+head_repo_author = os.getenv("HEAD_REPO")
+
+# Set up the GitHub API
+
+gh_api = gh.Github(auth=gh.Auth.Token(ghtoken))
+
+base_repo = gh_api.get_repo(f"{base_repo_author}/{repo_name}")
+head_repo = gh_api.get_repo(f"{head_repo_author}/{repo_name}")
+
+# Set up the Discord bot
+
+DISCORD_SERVER = discord.Object(id = int(server_id))
+
 intents = discord.Intents.default()
 intents.members = True
-
-TEST_SERVER = discord.Object(id = 1197269318665248877)
-
-auth = gh.Auth.Token(ghtoken)
-gh_api = gh.Github(auth=auth)
-
-repo = gh_api.get_repo("vivirepobot/vivi")
-vivi = gh_api.get_repo("omg/vivi")
-
-action_queue = []
-proposals = [pull for pull in vivi.get_pulls(state="open")]
 
 class BotClient(discord.Client):
     def __init__(self):
@@ -33,44 +41,47 @@ class BotClient(discord.Client):
         await self.wait_until_ready()
         if not self.sync:
             self.sync = True
-            await self.tree.sync(guild=TEST_SERVER)
-        print("OK")
+            await self.tree.sync(guild=DISCORD_SERVER)
+        print("Bot ready, listening for commands!")
 
 client = BotClient()
+client.run(token=token)
 
+# Task queue
 
+task_queue = TaskQueue(task_delay=90)
 
-# @client.tree.command(name="purge", description="deletes messages", guild=TEST_SERVER)
-# @app_commands.describe(count = "Number of messages to be deleted | 25")
-# @app_commands.describe(include = "User or Role's messages to be deleted | @everyone")
-# @app_commands.describe(exclude = "User or Role's messages to be ignored | None")
-# @app_commands.describe(message_type = "type of message to be deleted | all")
-# async def deletemsgs(inter: discord.Interaction, count: int = 25, include: discord.User|discord.Role = None, exclude: discord.User|discord.Role = None, message_type: MessageType = None):
+# Utility
 
-def timecheck(time: dt, diff):
-    return (dt.now(time.tzinfo) - time) > td(seconds=diff)
+def is_older_than(time: datetime, diff_seconds):
+    return (datetime.now() - time) > timedelta(seconds=diff_seconds)
 
-@client.tree.command(name="ping", description="...", guild=TEST_SERVER)
-async def ping(inter: discord.Interaction):
-    await inter.response.send_message("pong", ephemeral=True)    
-    return
+def update_proposals():
+    global proposals
+    proposals = [pull for pull in base_repo.get_pulls(state="open")]
 
-@client.tree.command(name="new_proposal", description="Creates a new change proposal", guild=TEST_SERVER)
-async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
-    if not timecheck(inter.user.created_at, 259_200): # 3 days
+update_proposals()
+
+# Commands
+
+proposalGroup = app_commands.Group(name="proposal", description="Make a proposal", guild=DISCORD_SERVER)
+
+@proposalGroup.command(name="create", description="Create a new proposal", guild=DISCORD_SERVER)
+async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
+    if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    name = str(inter.user.id) + inter.created_at.astimezone(tz.utc).strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
-    action_queue.append({"type":"new", "name":name, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
+    task_queue.add(new_pull, name=name, author=inter.user.name, data=(await diff.read()).decode("utf-8"))
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
-@client.tree.command(name="edit_proposal", description="Edit an existing proposal", guild=TEST_SERVER)
+@proposalGroup.command(name="edit", description="Edit an existing proposal", guild=DISCORD_SERVER)
 async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord.Attachment):
-    if not timecheck(inter.user.created_at, 259_200): # 3 days
+    if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    action_queue.append({"type":"edit", "name":proposal, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    task_queue.add(edit_pull, name=proposal, data=(await diff.read()).decode("utf-8"))
     await inter.response.send_message("Editing Proposal...", ephemeral=True)
     return
 
@@ -85,53 +96,45 @@ async def proposal_auto(inter: discord.Interaction, current: str):
             ))
     return ret[:25]
 
-def new_pullreq(task: dict):
-    branch = repo.create_git_ref(
-        f"refs/heads/{task['name']}",
-        repo.get_branch("master").commit.sha
-    ) # create the branch
+client.tree.add_command(proposalGroup)
 
-    repo.create_file(
-        path=f"changes/{task['name']}.diff",
+# Functions
+
+def new_pull(name: str, author: str, data: str):
+    # Create the branch
+    head_repo.create_git_ref(
+        f"refs/heads/{name}",
+        head_repo.get_branch("master").commit.sha
+    )
+
+    # Create the diff file
+    head_repo.create_file(
+        path=f"changes/{name}.diff",
         message="Create .diff",
-        content=task["data"],
-        branch=task["name"]
+        content=data,
+        branch=name
     ) 
 
-    vivi.create_pull(
-        title=f"'{task['name'].split('--')[2]}' created by {task["author"]}",
+    # Create the pull request
+    base_repo.create_pull(
+        title=f"'{name.split('--')[2]}' created by {author}",
         body="idk what to put here",
         base="master",
-        head=f"vivirepobot:{task['name']}",
+        head=f"{head_repo_author}:{name}",
         maintainer_can_modify=True
     )
 
-    proposals = [pull for pull in vivi.get_pulls(state="open")]
+    update_proposals()
 
-def edit_pullreq(task: dict):
-    file = repo.get_contents(f"changes/{task['name']}.diff", ref=task["name"])
-    repo.update_file(
+def edit_pull(name: str, data: str):
+    # Retrieve the diff file
+    file = head_repo.get_contents(f"changes/{name}.diff", ref=name)
+
+    # Update the diff file
+    head_repo.update_file(
         path=file.path,
         message="Update .diff",
-        content=task["data"],
-        branch=task["name"],
+        content=data,
+        branch=name,
         sha=file.sha
     )
-
-def run_actions():
-    while True:
-        if len(action_queue) > 0:
-            task = action_queue.pop(0)
-            if task["type"] == "new":
-                new_pullreq(task)
-            elif task["type"] == "edit":
-                edit_pullreq(task)
-            time.sleep(90) # 90s wait time
-        else:
-            time.sleep(10) # 90s has elapsed, so check every 10s instead
-
-
-actions = threading.Thread(target=run_actions, daemon=True)
-actions.start() #run in the background
-
-client.run(token=token)
