@@ -3,6 +3,7 @@ import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
 from datetime import datetime, timedelta
+from task_queue import TaskQueue
 
 # Load environment variables
 
@@ -46,10 +47,9 @@ class BotClient(discord.Client):
 client = BotClient()
 client.run(token=token)
 
-# Action queue
+# Task queue
 
-action_queue = []
-proposals = []
+task_queue = TaskQueue(task_delay=90)
 
 # Utility
 
@@ -70,7 +70,7 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
     name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
-    action_queue.append({"type":"new", "name":name, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    task_queue.add(new_pull, {"type":"new", "name":name, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
@@ -79,7 +79,7 @@ async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    action_queue.append({"type":"edit", "name":proposal, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
+    task_queue.add(edit_pull, {"type":"edit", "name":proposal, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
     await inter.response.send_message("Editing Proposal...", ephemeral=True)
     return
 
@@ -134,18 +134,3 @@ def edit_pull(task: dict):
         branch=task["name"],
         sha=file.sha
     )
-
-def run_actions():
-    while True:
-        if len(action_queue) > 0:
-            task = action_queue.pop(0)
-            if task["type"] == "new":
-                new_pullreq(task)
-            elif task["type"] == "edit":
-                edit_pullreq(task)
-            time.sleep(90) # 90s wait time
-        else:
-            time.sleep(10) # 90s has elapsed, so check every 10s instead
-
-actions = threading.Thread(target=run_actions, daemon=True)
-actions.start() #run in the background
