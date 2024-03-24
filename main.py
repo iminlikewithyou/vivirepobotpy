@@ -64,8 +64,8 @@ update_proposals()
 
 # Commands
 
-@client.tree.command(name="new_proposal", description="Creates a new change proposal", guild=DISCORD_SERVER)
-async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
+@client.tree.command(name="proposechanges", description="Creates a new change proposal", guild=DISCORD_SERVER)
+async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
@@ -74,7 +74,7 @@ async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, 
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
 
-@client.tree.command(name="edit_proposal", description="Edit an existing proposal", guild=DISCORD_SERVER)
+@client.tree.command(name="editproposal", description="Edit an existing proposal", guild=DISCORD_SERVER)
 async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord.Attachment):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
@@ -96,12 +96,14 @@ async def proposal_auto(inter: discord.Interaction, current: str):
 
 # Functions
 
-def new_pullreq(task: dict):
-    branch = head_repo.create_git_ref(
+def new_pull(task: dict):
+    # Create the branch
+    head_repo.create_git_ref(
         f"refs/heads/{task['name']}",
         head_repo.get_branch("master").commit.sha
-    ) # create the branch
+    )
 
+    # Create the diff file
     head_repo.create_file(
         path=f"changes/{task['name']}.diff",
         message="Create .diff",
@@ -109,6 +111,7 @@ def new_pullreq(task: dict):
         branch=task["name"]
     ) 
 
+    # Create the pull request
     base_repo.create_pull(
         title=f"'{task['name'].split('--')[2]}' created by {task["author"]}",
         body="idk what to put here",
@@ -119,8 +122,11 @@ def new_pullreq(task: dict):
 
     update_proposals()
 
-def edit_pullreq(task: dict):
+def edit_pull(task: dict):
+    # Retrieve the diff file
     file = head_repo.get_contents(f"changes/{task['name']}.diff", ref=task["name"])
+
+    # Update the diff file
     head_repo.update_file(
         path=file.path,
         message="Update .diff",
