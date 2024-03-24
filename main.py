@@ -2,7 +2,7 @@ import discord, time, threading, os
 import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
-from datetime import datetime as dt, timedelta as td, timezone as tz
+from datetime import datetime, timedelta
 
 # Load environment variables
 
@@ -53,8 +53,8 @@ proposals = []
 
 # Utility
 
-def is_older_than(time: dt, diff_seconds):
-    return (dt.now(time.tzinfo) - time) > td(seconds=diff_seconds)
+def is_older_than(time: datetime, diff_seconds):
+    return (datetime.now() - time) > timedelta(seconds=diff_seconds)
 
 def update_proposals():
     global proposals
@@ -69,7 +69,7 @@ async def create_proposal(inter: discord.Interaction, diff: discord.Attachment, 
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    name = str(inter.user.id) + inter.created_at.astimezone(tz.utc).strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
+    name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
     action_queue.append({"type":"new", "name":name, "author":inter.user.name, "data":(await diff.read()).decode("utf-8")})
     await inter.response.send_message("Creating proposal...", ephemeral=True)
     return
