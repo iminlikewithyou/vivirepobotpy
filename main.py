@@ -1,9 +1,11 @@
-import discord, os, re
+import discord, os, re, random
 import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
 from datetime import datetime, timedelta
 from task_queue import TaskQueue
+from typing import Optional
+from validate_diff import validate_diff
 
 # Load environment variables
 
@@ -59,22 +61,57 @@ def update_proposals():
     global proposals
     proposals = [pull for pull in base_repo.get_pulls(state="open")]
 
+def random_base62():
+    digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    return ''.join(random.choice(digits) for _ in range(9))
+
+def idify(uname, title):
+    string = title.strip(" ")
+    string = re.sub(r"([ -/])+", "-", string.lower()) #replace space - / with -
+    string = re.sub(r"[^a-z0-9-]", "", string) #remove unapproved characters (for id)
+    if len(string) > 20:
+        string = "-".join(string.split("-")[:2])
+        if len(string) > 20:
+            string = string.split("-")[0][:20].strip("-")
+    return f"{uname.lower()}-{string}-{random_base62()}"
+
+def extract(text, prefix):
+    pattern = fr"<!--{prefix} ([\w]+)-->"
+    match = re.search(pattern, text)
+    return match.group(1) if match else None
+
 update_proposals()
 
+#Filter Strings
+TITLE_FILTER = r"""[^ a-zA-Z0-9,.!?'":;\(\)\[\]-]"""
+DESC_FILTER = r"""[^ a-zA-Z0-9,.!?'":;\(\)\[\]\$\%\&\+\=\|-]"""
 # Commands
 
 proposalGroup = app_commands.Group(name="proposal", description="Make a proposal", guild_ids=[DISCORD_SERVER])
 
 @proposalGroup.command(name="create", description="Create a new proposal")
-async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, name: str = None):
+async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, title: Optional[str], description: Optional[str]):
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    name = re.sub(r"([\s\-_]|[^a-zA-Z0-9])+", "-", name) #replace spaces, -, _ with - for consistency, and remove any non alphanumeric chars
-    name = name[:25].strip("-") #enforce 25 char limit and remove trailing -
-    name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
-    task_queue.add(new_pull, name=name, author=inter.user.name, data=(await diff.read()).decode("utf-8"))
-    await inter.response.send_message("Creating proposal...", ephemeral=True)
+    
+    valid, data = validate_diff((await diff.read()).decode("utf-8")) #Validate .diff
+
+    if not valid:
+        await inter.response.send_message(data, ephemeral=True)
+        return
+
+    if title:
+        title = re.sub(TITLE_FILTER, "", title) #Filter out unapproved characters
+    else:
+        title = "Unnamed"
+    id = idify(inter.user.name, title)
+    if description:
+        desc = re.sub(DESC_FILTER, "", description).replace("GH-", "G​H-")
+    else:
+        desc = ""
+    task_queue.add(new_pull, title=title, id=id, desc=desc, author=inter.user, data=data)
+    await inter.response.send_message("Proposal created!", ephemeral=False)
     return
 
 @proposalGroup.command(name="edit", description="Edit an existing proposal")
@@ -82,60 +119,73 @@ async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    task_queue.add(edit_pull, name=proposal, data=(await diff.read()).decode("utf-8"))
-    await inter.response.send_message("Editing Proposal...", ephemeral=True)
+    valid, data = validate_diff((await diff.read()).decode("utf-8")) #Validate .diff
+
+    if not valid:
+        await inter.response.send_message(data, ephemeral=True)
+        return
+    
+    task_queue.add(edit_pull, proposal=proposal, data=data)
+    await inter.response.send_message("Editing Proposal", ephemeral=False)
     return
 
 @edit_proposal.autocomplete(name="proposal")
 async def proposal_auto(inter: discord.Interaction, current: str):
     ret = []
     for prop in proposals:
-        if "--" in prop.head.ref and current.lower() in prop.head.ref.lower():
-            ret.append(app_commands.Choice(
-                name=f"{prop.head.ref.split('--')[2]} by {client.get_user(int(prop.head.ref.split('--')[0]))} at {prop.head.ref.split('--')[1].replace("-", "/", 2).replace("-", " ", 1).replace("-", ":")}", 
-                value=prop.head.ref
-            ))
+        if prop.user.login != head_repo_author: continue
+        uid = int(extract(prop.body, "by"))
+        if inter.user.id != uid: continue
+        if current and not current in f"{prop.title} #{prop.number}": continue
+        ret.append(app_commands.Choice(name=f"{prop.title} #{prop.number}", value=prop.head.ref))
     return ret[:25]
 
 client.tree.add_command(proposalGroup, guild=DISCORD_SERVER)
 
 # Functions
 
-def new_pull(name: str, author: str, data: str):
+def new_pull_body(desc, user, id):
+    if desc:
+        return f"proposed by {user.name}\n### Notes\n```{desc}```\n\n<!--by {user.id}-->\n<!--id {id}-->"
+    else:
+        return f"proposed by {user.name}\n\n<!--by {user.id}-->\n<!--id {id}-->"
+
+def new_pull(title: str, id: str, desc: str, author: discord.User, data: str):
     # Create the branch
     head_repo.create_git_ref(
-        f"refs/heads/{name}",
+        f"refs/heads/{id}",
         head_repo.get_branch("master").commit.sha
     )
 
     # Create the diff file
     head_repo.create_file(
-        path=f"changes/{name}.diff",
+        path=f"changes/{id}.diff",
         message="Create .diff",
         content=data,
-        branch=name
+        branch=id
     ) 
 
     # Create the pull request
     base_repo.create_pull(
-        title=f"'{name.split('--')[2]}' created by {author}",
+        title=f"{title} • {author.name}",
         base="master",
-        head=f"{head_repo_author}:{name}",
+        body=new_pull_body(desc, author, id),
+        head=f"{head_repo_author}:{id}",
         maintainer_can_modify=True
     )
 
     update_proposals()
 
-def edit_pull(name: str, data: str):
+def edit_pull(proposal: str, data: str):
     # Retrieve the diff file
-    file = head_repo.get_contents(f"changes/{name}.diff", ref=name)
+    file = head_repo.get_contents(f"changes/{proposal}.diff", ref=proposal)
 
     # Update the diff file
     head_repo.update_file(
         path=file.path,
         message="Update .diff",
         content=data,
-        branch=name,
+        branch=proposal,
         sha=file.sha
     )
 
