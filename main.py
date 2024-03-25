@@ -1,4 +1,4 @@
-import discord, os
+import discord, os, re
 import github as gh
 from dotenv import load_dotenv
 from discord import app_commands
@@ -70,6 +70,8 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
+    name = re.sub(r"([\s\-_]|[^a-zA-Z0-9])+", "-", name) #replace spaces, -, _ with - for consistency, and remove any non alphanumeric chars
+    name = name[:25].strip("-") #enforce 25 char limit and remove trailing -
     name = str(inter.user.id) + inter.created_at.strftime("--%d-%m-%y-%H-%M-%S") + "--" + (name or "unnamed") #730660371844825149--00-00-00-00-00-00--unnamed or --<name>
     task_queue.add(new_pull, name=name, author=inter.user.name, data=(await diff.read()).decode("utf-8"))
     await inter.response.send_message("Creating proposal...", ephemeral=True)
@@ -137,5 +139,4 @@ def edit_pull(name: str, data: str):
         sha=file.sha
     )
 
-#Pretty sure this needs to go at the bottom
 client.run(token=token)
