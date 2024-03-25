@@ -146,7 +146,7 @@ client.tree.add_command(proposalGroup, guild=DISCORD_SERVER)
 
 def new_pull_body(desc, user, id):
     if desc:
-        return f"proposed by {user.name}\n### Notes\n```{desc}```\n\n<!--by {user.id}-->\n<!--id {id}-->"
+        return f"proposed by {user.name}\n### Notes\n{desc}\n\n<!--by {user.id}-->\n<!--id {id}-->"
     else:
         return f"proposed by {user.name}\n\n<!--by {user.id}-->\n<!--id {id}-->"
 
