@@ -24,7 +24,7 @@ def validate_diff(diff_text):
             previous_line_empty = False
         elif line.startswith(("+", "-")):
             # Automatically fix the format of added/removed lines
-            content = line[1:].lstrip()  # Remove leading spaces after +/-
+            content = line[1:].lstrip().upper()  # Remove leading spaces after +/- and convert to uppercase
             if content:
                 fixed_line = line[0] + " " + content.rstrip()  # Ensure correct spacing and trim trailing spaces
                 fixed_lines.append(fixed_line)
