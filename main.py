@@ -80,6 +80,19 @@ def extract(text, prefix):
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
+def edit_message(inter: discord.Interaction, *args, **kwargs):
+    async def coro():
+        # try editing the original message
+        try:
+            await inter.edit_original_response(*args, **kwargs)
+        except Exception as e1:
+            # send a new message
+            try:
+                await inter.channel.send(*args, **kwargs)
+            except Exception as e2:
+                pass
+    client.loop.create_task(coro())
+
 update_proposals()
 
 #Filter Strings
@@ -95,7 +108,7 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
     
-    valid, data = validate_diff((await diff.read()).decode("utf-8")) #Validate .diff
+    valid, data = validate_diff((await diff.read()).decode("utf-8")) # Validate .diff
 
     if not valid:
         await inter.response.send_message(data, ephemeral=True)
@@ -112,8 +125,8 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
         desc = ""
     
     current_time = datetime.now().timestamp()
-    completion_time = current_time + task_queue.get_estimated_wait(1)
-    await inter.response.send_message(f"Proposal creation pending..\nEstimated completion time: <t:{completion_time}:T>", ephemeral=False)
+    completion_time = current_time + task_queue.get_estimated_wait(1) + 15 # GH delay
+    await inter.response.send_message(f"Proposal creation pending..\nEstimated completion time: <t:{int(completion_time)}:R>", ephemeral=False)
     
     task_queue.add(new_pull, title=title, id=id, desc=desc, author=inter.user, data=data, inter=inter)
     return
@@ -123,15 +136,15 @@ async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord
     if not is_older_than(inter.user.created_at, 259_200): # 3 days
         await inter.response.send_message("Your account is too young, come back later", ephemeral=True)
         return
-    valid, data = validate_diff((await diff.read()).decode("utf-8")) #Validate .diff
+    valid, data = validate_diff((await diff.read()).decode("utf-8")) # Validate .diff
 
     if not valid:
         await inter.response.send_message(data, ephemeral=True)
         return
     
     current_time = datetime.now().timestamp()
-    completion_time = current_time + task_queue.get_estimated_wait(1)
-    await inter.response.send_message(f"Proposal edit pending..\nEstimated completion time: <t:{completion_time}:T>", ephemeral=False)
+    completion_time = current_time + task_queue.get_estimated_wait(1) + 8 # GH delay
+    await inter.response.send_message(f"Proposal edit pending..\nEstimated completion time: <t:{int(completion_time)}:R>", ephemeral=False)
     
     task_queue.add(edit_pull, proposal=proposal, data=data, inter=inter)
     return
@@ -157,7 +170,7 @@ def new_pull_body(desc, user, id):
     else:
         return f"proposed by {user.name}\n\n<!--by {user.id}-->\n<!--id {id}-->"
 
-async def new_pull(title: str, id: str, desc: str, author: discord.User, data: str, inter: discord.Interaction):
+def new_pull(title: str, id: str, desc: str, author: discord.User, data: str, inter: discord.Interaction):
     # Sync Fork (weirdly says 1 commit ahead, it isn't)
     head_repo.merge(
         "master",
@@ -188,18 +201,9 @@ async def new_pull(title: str, id: str, desc: str, author: discord.User, data: s
     )
 
     update_proposals()
-    
-    # try editing the original message
-    try:
-        await inter.edit_original_message(content=f"[Your proposal]({pr.html_url}) was created!")
-    except:
-        # send a new message
-        try:
-            await inter.channel.send(f"{inter.user.mention} [Your proposal]({pr.html_url}) was created!");
-        except:
-            pass
+    edit_message(inter, content=f"[Your proposal]({pr.html_url}) was created!")
 
-async def edit_pull(proposal: str, data: str, inter: discord.Interaction):
+def edit_pull(proposal: str, data: str, inter: discord.Interaction):
     # Retrieve the diff file
     file = head_repo.get_contents(f"changes/{proposal}.diff", ref=proposal)
 
@@ -218,14 +222,6 @@ async def edit_pull(proposal: str, data: str, inter: discord.Interaction):
     if not pr:
         return
         
-    # try editing the original message
-    try:
-        await inter.edit_original_message(content=f"[Your proposal]({pr.html_url}) was edited!")
-    except:
-        # send a new message
-        try:
-            await inter.channel.send(f"{inter.user.mention} [Your proposal]({pr.html_url}) was edited!");
-        except:
-            pass
+    edit_message(inter, content=f"{inter.user.mention} [Your proposal]({pr.html_url}) was edited!")
 
 client.run(token=token)
