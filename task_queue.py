@@ -17,9 +17,26 @@ class TaskQueue:
         self.thread = threading.Thread(target=self._process_queue, daemon=True)
         self.thread.start()
 
+    def _get_initial_wait(self):
+        time_since_last_task = time.time() - self.last_task_time
+        time_to_wait = max(self.task_delay - time_since_last_task, 0)
+        return time_to_wait
+    
+    def get_estimated_wait(self, ahead: int = 0):
+        """
+        Returns the estimated time in seconds until the last task in the queue will be executed.
+        If `ahead` is specified, it returns the estimated time as if there were `ahead` more tasks in the queue.
+        """
+        with self.lock:
+            inital_wait = self._get_initial_wait()
+            consequent_wait = max(self.task_delay * (len(self.queue) - 1 + ahead), 0)
+            return inital_wait + consequent_wait
+
     def add(self, task: Callable, *args, **kwargs):
         """
         Adds a task along with its arguments to the task queue.
+        
+        Returns the estimated time in seconds until the task will be executed.
         """
         # Use a lock to ensure that only one thread modifies the queue at a time
         with self.lock:
@@ -27,6 +44,7 @@ class TaskQueue:
             self.queue.append((task, args, kwargs))
             # Tell the processing thread that a new task is ready to be executed
             self.event.set()
+            
 
     def _process_queue(self):
         """
@@ -37,10 +55,9 @@ class TaskQueue:
             self.event.wait()
 
             # Check the time since the last task and wait if necessary
-            time_since_last_task = time.time() - self.last_task_time
-            time_to_wait = self.task_delay - time_since_last_task
-            if time_to_wait > 0:
-                time.sleep(time_to_wait)
+            initial_wait = self._get_initial_wait()
+            if initial_wait > 0:
+                time.sleep(initial_wait)
 
             # Use the queue inside the lock to ensure that the queue is not modified by another thread
             with self.lock:
