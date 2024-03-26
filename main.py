@@ -110,8 +110,12 @@ async def propose_changes(inter: discord.Interaction, diff: discord.Attachment, 
         desc = re.sub(DESC_FILTER, "", description).replace("GH-", "G​H-")
     else:
         desc = ""
-    task_queue.add(new_pull, title=title, id=id, desc=desc, author=inter.user, data=data)
-    await inter.response.send_message("Proposal created!", ephemeral=False)
+    
+    current_time = datetime.now().timestamp()
+    completion_time = current_time + task_queue.get_estimated_wait(1)
+    await inter.response.send_message(f"Proposal creation pending..\nEstimated completion time: <t:{completion_time}:T>", ephemeral=False)
+    
+    task_queue.add(new_pull, title=title, id=id, desc=desc, author=inter.user, data=data, inter=inter)
     return
 
 @proposalGroup.command(name="edit", description="Edit an existing proposal")
@@ -125,8 +129,11 @@ async def edit_proposal(inter: discord.Interaction, proposal: str, diff: discord
         await inter.response.send_message(data, ephemeral=True)
         return
     
-    task_queue.add(edit_pull, proposal=proposal, data=data)
-    await inter.response.send_message("Editing Proposal", ephemeral=False)
+    current_time = datetime.now().timestamp()
+    completion_time = current_time + task_queue.get_estimated_wait(1)
+    await inter.response.send_message(f"Proposal edit pending..\nEstimated completion time: <t:{completion_time}:T>", ephemeral=False)
+    
+    task_queue.add(edit_pull, proposal=proposal, data=data, inter=inter)
     return
 
 @edit_proposal.autocomplete(name="proposal")
@@ -150,7 +157,7 @@ def new_pull_body(desc, user, id):
     else:
         return f"proposed by {user.name}\n\n<!--by {user.id}-->\n<!--id {id}-->"
 
-def new_pull(title: str, id: str, desc: str, author: discord.User, data: str):
+async def new_pull(title: str, id: str, desc: str, author: discord.User, data: str, inter: discord.Interaction):
     # Create the branch
     head_repo.create_git_ref(
         f"refs/heads/{id}",
@@ -166,7 +173,7 @@ def new_pull(title: str, id: str, desc: str, author: discord.User, data: str):
     ) 
 
     # Create the pull request
-    base_repo.create_pull(
+    pr = base_repo.create_pull(
         title=f"{title} • {author.name}",
         base="master",
         body=new_pull_body(desc, author, id),
@@ -175,8 +182,18 @@ def new_pull(title: str, id: str, desc: str, author: discord.User, data: str):
     )
 
     update_proposals()
+    
+    # try editing the original message
+    try:
+        await inter.edit_original_message(content=f"[Your proposal]({pr.html_url}) was created!")
+    except:
+        # send a new message
+        try:
+            await inter.channel.send(f"{inter.user.mention} [Your proposal]({pr.html_url}) was created!");
+        except:
+            pass
 
-def edit_pull(proposal: str, data: str):
+async def edit_pull(proposal: str, data: str, inter: discord.Interaction):
     # Retrieve the diff file
     file = head_repo.get_contents(f"changes/{proposal}.diff", ref=proposal)
 
@@ -188,5 +205,21 @@ def edit_pull(proposal: str, data: str):
         branch=proposal,
         sha=file.sha
     )
+    
+    # Get the pull request
+    pr = [pull for pull in base_repo.get_pulls(state="open") if pull.head.ref == proposal][0]
+    
+    if not pr:
+        return
+        
+    # try editing the original message
+    try:
+        await inter.edit_original_message(content=f"[Your proposal]({pr.html_url}) was edited!")
+    except:
+        # send a new message
+        try:
+            await inter.channel.send(f"{inter.user.mention} [Your proposal]({pr.html_url}) was edited!");
+        except:
+            pass
 
 client.run(token=token)
