@@ -14,7 +14,7 @@ def validate_diff(diff_text):
     fixed_lines = []
     content_lines = []
     lines = diff_text.split('\n')
-    previous_line_empty = False
+    previous_line_empty = True
     
     for line_number, line in enumerate(lines, start=1):
         if line.startswith("#"):
@@ -44,12 +44,6 @@ def validate_diff(diff_text):
         else:
             # Invalid character
             return (False, f"Invalid line on line {line_number}. Must start with +, -, or #.")
-
-    # Trim leading and trailing empty lines
-    while fixed_lines and fixed_lines[0] == "":
-        fixed_lines.pop(0)
-    while fixed_lines and fixed_lines[-1] == "":
-        fixed_lines.pop()
 
     # Join the fixed lines back into a single string
     fixed_text = '\n'.join(fixed_lines)
