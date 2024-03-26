@@ -151,6 +151,13 @@ def new_pull_body(desc, user, id):
         return f"proposed by {user.name}\n\n<!--by {user.id}-->\n<!--id {id}-->"
 
 def new_pull(title: str, id: str, desc: str, author: discord.User, data: str):
+
+    # Sync Fork (weirdly says 1 commit ahead, it isn't)
+    head_repo.merge(
+        "master",
+        base_repo.get_branch("master").commit.sha
+    )
+
     # Create the branch
     head_repo.create_git_ref(
         f"refs/heads/{id}",
