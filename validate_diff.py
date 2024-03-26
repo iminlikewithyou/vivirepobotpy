@@ -28,9 +28,10 @@ def validate_diff(diff_text):
             content = line[1:].strip().upper()  # Retrieve the content, stripping leading and trailing spaces and converting to uppercase
             if content:
                 fixed_line = line[0] + " " + content  # Create a properly formatted added/removed line
-                if not fixed_line in content_lines:
-                    fixed_lines.append(fixed_line)
-                    content_lines.append(content)
+                if content in content_lines:
+                    return (False, f"Invalid line on line {line_number}. Duplicate content detected: {content}.")
+                fixed_lines.append(fixed_line)
+                content_lines.append(content)
                 previous_line_empty = False
             else:
                 return (False, f"Invalid line on line {line_number}. No content after {line[0]}.")
